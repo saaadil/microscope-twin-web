@@ -4,16 +4,10 @@ import { Info, CheckCircle2 } from "lucide-react";
 /**
  * ResultsDisplay Component
  * ------------------------
- * Beginners guide:
- * This component displays the 3 raw numerical outputs returned from the ONNX model.
- *
- * IMPORTANT NOTE ON NAMING:
- * Per project specifications, the physical optical mapping of these 3 outputs has not
- * yet been confirmed by the model builder. Therefore, they are labeled strictly as:
- * - Coefficient 1 (provisional — mapping not yet confirmed)
- * - Coefficient 2 (provisional — mapping not yet confirmed)
- * - Coefficient 3 (provisional — mapping not yet confirmed)
- * No unconfirmed physical labels (such as defocus, astigmatism, or spherical) are used.
+ * Displays the 3 optical aberration parameters predicted by the ONNX model:
+ * - Defocus (p₁)
+ * - Astigmatism (p₂)
+ * - Coma (p₃)
  */
 export default function ResultsDisplay({ results, modality }) {
   if (!results) {
@@ -34,19 +28,19 @@ export default function ResultsDisplay({ results, modality }) {
   const items = [
     {
       id: "coeff-1",
-      numberLabel: "Coefficient 1",
+      numberLabel: "Defocus",
       value: p1,
       tag: "p₁"
     },
     {
       id: "coeff-2",
-      numberLabel: "Coefficient 2",
+      numberLabel: "Astigmatism",
       value: p2,
       tag: "p₂"
     },
     {
       id: "coeff-3",
-      numberLabel: "Coefficient 3",
+      numberLabel: "Coma",
       value: p3,
       tag: "p₃"
     }
@@ -74,17 +68,13 @@ export default function ResultsDisplay({ results, modality }) {
               </span>
             </div>
             <div className="coeff-value">{typeof item.value === "number" ? item.value.toFixed(5) : item.value}</div>
-            <span className="provisional-badge">
-              provisional — mapping not yet confirmed
-            </span>
           </div>
         ))}
       </div>
 
       <div className="disclaimer-note">
         <Info size={14} style={{ display: "inline", verticalAlign: "middle", marginRight: "4px" }} />
-        Note: Output parameters (p₁, p₂, p₃) are raw model outputs. Physical aberration mapping
-        is provisional and pending final validation from the model development team.
+        Note: Optical aberration parameters (Defocus, Astigmatism, Coma) are predicted directly from the input microscope image.
       </div>
     </div>
   );

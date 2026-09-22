@@ -21,30 +21,59 @@ from backend.main import app
 client = TestClient(app)
 
 def test_health_check_missing_models():
-    res = client.get("/api/health")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "awaiting_models"
-    assert data["models"]["brightfield"] is False
-    assert data["models"]["fluorescence"] is False
-    assert "Model not found — place brightfield.onnx and fluorescence.onnx in backend/models/" in data["message"]
-    print("PASS: Health check reports missing models correctly.")
+    with patch("backend.main.check_models_present", return_value={"brightfield": False, "fluorescence": False}):
+        res = client.get("/api/health")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "awaiting_models"
+        assert data["models"]["brightfield"] is False
+        assert data["models"]["fluorescence"] is False
+        assert "Model not found — place brightfield.onnx and fluorescence.onnx in backend/models/" in data["message"]
+        print("PASS: Health check reports missing models correctly.")
 
 def test_predict_returns_error_when_model_missing():
-    img = Image.new("RGB", (64, 64), color="white")
+    with patch("os.path.exists", return_value=False):
+        img = Image.new("RGB", (64, 64), color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+
+        res = client.post(
+            "/api/predict",
+            data={"modality": "brightfield"},
+            files={"file": ("test.png", buf.getvalue(), "image/png")}
+        )
+        assert res.status_code == 404
+        data = res.json()
+        assert data["detail"] == "Model not found — place brightfield.onnx and fluorescence.onnx in backend/models/"
+        print("PASS: /api/predict returns exact 404 message when models are absent.")
+
+def test_preprocessing_pipeline():
+    from backend.main import preprocess_image
+    # 1. Test dimensions and channels
+    img = Image.new("RGB", (100, 150), color=(128, 64, 32))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
-    buf.seek(0)
+    tensor = preprocess_image(buf.getvalue())
+    assert tensor.shape == (1, 1, 224, 224), f"Expected shape (1, 1, 224, 224), got {tensor.shape}"
 
-    res = client.post(
-        "/api/predict",
-        data={"modality": "brightfield"},
-        files={"file": ("test.png", buf.getvalue(), "image/png")}
-    )
-    assert res.status_code == 404
-    data = res.json()
-    assert data["detail"] == "Model not found — place brightfield.onnx and fluorescence.onnx in backend/models/"
-    print("PASS: /api/predict returns exact 404 message when models are absent.")
+    # 2. Test scalar normalization: mean=0.5, std=0.5
+    zero_img = Image.new("L", (50, 50), color=0)
+    zbuf = io.BytesIO()
+    zero_img.save(zbuf, format="PNG")
+    ztensor = preprocess_image(zbuf.getvalue())
+    assert ztensor.shape == (1, 1, 224, 224)
+    np.testing.assert_allclose(ztensor.min(), -1.0, atol=1e-5)
+    np.testing.assert_allclose(ztensor.max(), -1.0, atol=1e-5)
+
+    white_img = Image.new("L", (50, 50), color=255)
+    wbuf = io.BytesIO()
+    white_img.save(wbuf, format="PNG")
+    wtensor = preprocess_image(wbuf.getvalue())
+    assert wtensor.shape == (1, 1, 224, 224)
+    np.testing.assert_allclose(wtensor.min(), 1.0, atol=1e-5)
+    np.testing.assert_allclose(wtensor.max(), 1.0, atol=1e-5)
+    print("PASS: Preprocessing pipeline satisfies grayscale -> resize 224x224 -> [0,1] -> mean=0.5, std=0.5 -> (1,1,224,224) NCHW.")
 
 def test_predict_response_structure_with_mock_session():
     # Mock ONNX session returning 3 dummy values: [0.123, -0.456, 0.789]
@@ -88,10 +117,11 @@ def test_predict_response_structure_with_mock_session():
         assert "astigmatism" not in data
         assert "spherical" not in data
 
-        print("PASS: API returns strictly generic p1, p2, p3 with no derived metrics or unconfirmed labels.")
+        print("PASS: API returns strictly generic p1, p2, p3 with no derived metrics.")
 
 if __name__ == "__main__":
     test_health_check_missing_models()
     test_predict_returns_error_when_model_missing()
+    test_preprocessing_pipeline()
     test_predict_response_structure_with_mock_session()
     print("ALL TESTS PASSED! Backend strictly adheres to user specifications.")

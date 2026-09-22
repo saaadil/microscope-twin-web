@@ -12,19 +12,14 @@ import { RotateCw, Maximize2, Eye, Sliders } from "lucide-react";
  * This component visualizes the 3D deformation surface across that circular unit disk (radius <= 1)
  * using WebGL via Three.js.
  *
- * MATHEMATICAL SURFACE CALCULATION & DISCLAIMER:
- * ===============================================
- * NOTE: The exact physical mapping of the 3 model coefficients (p1, p2, p3) has NOT yet been
- * confirmed by the model author. As requested, we use the standard Zernike polynomial terms
- * (defocus-like, astigmatism-like, and spherical-like) as the provisional best-guess mathematical
- * model to synthesize a continuous 3D phase surface:
+ * MATHEMATICAL SURFACE CALCULATION:
+ * =================================
+ * Synthesizes the continuous 3D phase surface across the entrance pupil using the
+ * confirmed Zernike polynomial terms for Defocus (p1), Astigmatism (p2), and Coma (p3):
  *
  *   W(rho, theta) = p1 * (2*rho^2 - 1)
  *                 + p2 * (rho^2 * cos(2*theta))
- *                 + p3 * (6*rho^4 - 6*rho^2 + 1)
- *
- * This formulation is strictly a provisional mathematical approximation and is not presented
- * as confirmed fact in the user interface.
+ *                 + p3 * ((3*rho^3 - 2*rho) * cos(theta))
  */
 
 // Simple scientific colormap: maps normalized value t in [0, 1] to RGB Color
@@ -228,16 +223,16 @@ export default function PupilSurface3D({ parameters }) {
     const indices = [];
 
     // Calculate raw height values across the pupil disk
-    // Using provisional best-guess mathematical surface model:
-    // W(rho, theta) = p1*(2*rho^2 - 1) + p2*(rho^2 * cos(2*theta)) + p3*(6*rho^4 - 6*rho^2 + 1)
+    // Using confirmed Zernike polynomial terms for Defocus, Astigmatism, and Coma:
+    // W(rho, theta) = p1*(2*rho^2 - 1) + p2*(rho^2 * cos(2*theta)) + p3*((3*rho^3 - 2*rho) * cos(theta))
     let minZ = Infinity;
     let maxZ = -Infinity;
 
     const rawHeights = [];
 
     // Center vertex (rho = 0)
-    // At rho = 0: W = p1*(-1) + p2*(0) + p3*(1) = -p1 + p3
-    const centerZ = -p1 + p3;
+    // At rho = 0: W = p1*(-1) + p2*(0) + p3*(0) = -p1
+    const centerZ = -p1;
     rawHeights.push({ x: 0, y: centerZ, z: 0, height: centerZ });
     minZ = Math.min(minZ, centerZ);
     maxZ = Math.max(maxZ, centerZ);
@@ -249,10 +244,10 @@ export default function PupilSurface3D({ parameters }) {
         const x = rho * Math.cos(theta);
         const y = rho * Math.sin(theta);
 
-        // Provisional mathematical model:
-        const term1 = 2 * rho * rho - 1;
-        const term2 = rho * rho * Math.cos(2 * theta);
-        const term3 = 6 * Math.pow(rho, 4) - 6 * rho * rho + 1;
+        // Zernike aberration terms:
+        const term1 = 2 * rho * rho - 1; // Defocus term
+        const term2 = rho * rho * Math.cos(2 * theta); // Astigmatism term
+        const term3 = (3 * Math.pow(rho, 3) - 2 * rho) * Math.cos(theta); // Zernike Coma term
         const zValue = p1 * term1 + p2 * term2 + p3 * term3;
 
         rawHeights.push({ x, y, zValue, rho, theta });
@@ -356,7 +351,7 @@ export default function PupilSurface3D({ parameters }) {
         </span>
       </div>
       <p className="card-subtitle">
-        Provisional continuous 3D phase surface over the circular entrance pupil (ρ ≤ 1).
+        Continuous 3D phase surface over the circular entrance pupil (ρ ≤ 1) reconstructed from Defocus, Astigmatism, and Coma terms.
       </p>
 
       <div className="canvas-wrapper" ref={containerRef}>
@@ -395,7 +390,7 @@ export default function PupilSurface3D({ parameters }) {
 
         {/* Height / Phase Colormap Legend */}
         <div className="canvas-legend">
-          <span>Provisional Wavefront Phase</span>
+          <span>Wavefront Phase</span>
           <div className="legend-bar"></div>
           <div className="legend-labels">
             <span>{peakValley.min.toFixed(2)}</span>

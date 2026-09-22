@@ -9,12 +9,10 @@ How this works:
 3. Checks if the requested ONNX model exists in backend/models/.
    - If missing, immediately returns an informative error instructing the user
      to place brightfield.onnx or fluorescence.onnx into backend/models/.
-4. Preprocesses the image into a numpy tensor.
-   NOTE: Preprocessing parameters (dimensions, normalization, channel order)
-   are placeholders until confirmed with the model author.
+4. Preprocesses the image into a numpy tensor:
+   grayscale -> resize (224, 224) -> scale [0, 1] -> normalize (mean=0.5, std=0.5) -> shape (1, 1, 224, 224) NCHW.
 5. Runs the ONNX model using ONNX Runtime.
 6. Returns exactly the 3 model output numbers as generic fields: p1, p2, p3.
-   No assumptions are made about Zernike polynomial mappings or derived metrics.
 """
 
 import io
@@ -105,37 +103,25 @@ def get_onnx_session(modality: str) -> ort.InferenceSession:
 def preprocess_image(image_bytes: bytes) -> np.ndarray:
     """
     Converts raw uploaded image bytes into a tensor for ONNX inference.
-
-    # TODO: confirm exact values against the model's training pipeline before trusting output
-    # (e.g. resize dimensions, color channel ordering RGB vs BGR vs grayscale,
-    # mean/std normalization or [0, 1] scaling).
+    Pipeline: grayscale -> resize 224x224 -> scale to [0,1] -> normalize (mean=0.5, std=0.5) -> shape (1, 1, 224, 224) NCHW.
     """
     try:
         pil_img = Image.open(io.BytesIO(image_bytes))
-        # TODO: confirm exact values against the model's training pipeline before trusting output
-        # Currently converting to standard 3-channel RGB:
-        pil_img = pil_img.convert("RGB")
+        # 1. Convert to grayscale (single channel)
+        pil_img = pil_img.convert("L")
 
-        # TODO: confirm exact values against the model's training pipeline before trusting output
-        # Currently using 224x224 bilinear resize as a default placeholder:
+        # 2. Resize to 224x224 bilinear
         target_size = (224, 224)
         pil_img = pil_img.resize(target_size, Image.Resampling.BILINEAR)
 
-        # Convert to numpy float32 array in [0.0, 1.0]
+        # 3. Convert to numpy float32 array in [0.0, 1.0]
         arr = np.array(pil_img, dtype=np.float32) / 255.0
 
-        # TODO: confirm exact values against the model's training pipeline before trusting output
-        # Currently applying standard ImageNet mean and std normalization:
-        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-        arr = (arr - mean) / std
+        # 4. Normalization with scalar mean=0.5, std=0.5 for single channel
+        arr = (arr - 0.5) / 0.5
 
-        # TODO: confirm exact values against the model's training pipeline before trusting output
-        # Transpose from (Height, Width, Channels) to (Channels, Height, Width):
-        arr = np.transpose(arr, (2, 0, 1))
-
-        # Add batch dimension: (1, Channels, Height, Width)
-        tensor = np.expand_dims(arr, axis=0)
+        # 5. Format tensor to shape (1, 1, 224, 224) [Batch, Channel, Height, Width]
+        tensor = arr[np.newaxis, np.newaxis, :, :]
         return tensor
     except Exception as e:
         raise HTTPException(
